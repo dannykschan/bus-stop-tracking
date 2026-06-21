@@ -5,7 +5,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>巴士實時監測看板 V4.0</title>
+    <title>巴士實時監測看板 V3.4</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
         body {
@@ -81,8 +81,8 @@
             width: 100px; text-align: center; flex-shrink: 0;
         }
         .info-block { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-        .stop-name { font-size: 1.4rem; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
-        .dest-name { font-size: 1.2rem; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+        .stop-name { font-size: 1.4rem; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .dest-name { font-size: 1.2rem; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         
         /* 雙層時間佈局 */
         .card-bottom { display: flex; flex-direction: column; margin-top: 15px; }
@@ -95,7 +95,7 @@
             font-variant-numeric: tabular-nums;
         }
         
-        /* 左邊字向左align，右邊字向右align */
+        /* 確保左右文字對齊 */
         .arrival-row span:first-child, .countdown-row span:first-child { text-align: left; }
         .arrival-row span:last-child, .countdown-row span:last-child { text-align: right; }
         
@@ -208,7 +208,7 @@
 
         let busConfig = JSON.parse(localStorage.getItem('bus_board_config_v3')) || DEFAULT_CONFIG;
         let globalEtas = []; 
-        let isFetchingFlags = []; // 防止重複連線鎖
+        let isFetchingFlags = []; 
         let tempStopNames = {}; 
 
         let kmbRoutesCache = null;
@@ -221,7 +221,6 @@
             const container = document.getElementById('board-container');
             container.innerHTML = "";
             
-            // 確保資料陣列長度對齊
             while (globalEtas.length < busConfig.length) globalEtas.push([null, null]);
             while (isFetchingFlags.length < busConfig.length) isFetchingFlags.push(false);
 
@@ -258,7 +257,7 @@
             });
         }
 
-        // 實時倒數器驅動引擎 (每秒執行畫面扣減)
+        // 實時倒數器驅動引擎 (每秒執行)
         setInterval(() => {
             const now = new Date();
             document.getElementById('current-clock').innerText = now.toTimeString().split(' ')[0];
@@ -297,13 +296,13 @@
                         const totalSecs = Math.floor(diffMs / 1000);
                         const mins = Math.floor(totalSecs / 60);
                         const secs = totalSecs % 60;
-                        countdownEl.innerText = `${mins}分 ${String(secs).padStart(2, '0')}秒`;
+                        countdownEl.innerText = `${mins}:${String(secs).padStart(2, '0')}`;
                     }
                 });
             });
         }, 1000);
 
-        // 核心同步網絡數據 (已調整為直接連線，外層控制更新頻率)
+        // 核心同步網路數據 (調整為外層驅動，內建連線鎖)
         async function fetchAPI() {
             if (busConfig.length === 0) return;
             
@@ -330,9 +329,9 @@
                     ];
                 } catch (e) {
                     console.error("Fetch ETA Error: ", e);
-                } finaly {
-                    isFetchingFlags[index] = false;
-                }
+                } {{
+                    isFetchingFlags[index] = false; 
+                }}
             });
         }
 
@@ -378,37 +377,9 @@
             document.getElementById('config-modal').style.display = 'none';
         }
 
-        // 點擊儲存車站資料 (強化同步捕獲機制，杜絕未知車站)
-        async function selectAndSaveStop(company, route, bound, serviceType, stopId, destName) {
+        function selectAndSaveStop(company, route, bound, serviceType, stopId, destName) {
             const index = parseInt(document.getElementById('slot-index').value);
-            
-            let stopName = tempStopNames[stopId] || stopId;
-            
-            // 如果畫面上已經載入到名，強行由 DOM 讀取最新中文名
-            const row = document.getElementById(`ctb-stop-${stopId}`);
-            if (row) {
-                const spanText = row.querySelector('.ctb-name-span').innerText;
-                if (spanText && spanText !== "站名載入中..." && spanText !== "未知車站") {
-                    stopName = spanText;
-                }
-            }
-
-            // 防線：如果名稱依然係預設或未讀到，當場進行一次即時直連獲取
-            if (stopName === stopId || stopName === "站名載入中..." || stopName === "未知車站") {
-                try {
-                    const url = company === "KMB" 
-                        ? `https://data.etabus.gov.hk/v1/transport/kmb/stop/${stopId}`
-                        : `https://rt.data.gov.hk/v1/transport/citybus-nwfb/stop/CTB/${stopId}`;
-                    const res = await fetch(url);
-                    const result = await res.json();
-                    if (result.data && result.data.name_tc) {
-                        stopName = result.data.name_tc;
-                        if (company === "CTB") ctbStopsMap[stopId] = stopName;
-                    }
-                } catch (e) {
-                    console.error("無法實時獲取站名: ", e);
-                }
-            }
+            const stopName = tempStopNames[stopId] || stopId;
 
             const newCard = {
                 company: company, route: route, dir: bound,
@@ -427,7 +398,7 @@
             fetchAPI(); 
         }
 
-        // 智能搵站核心 (已改為直連官方 API)
+        // 智能搵站核心 (直連政府免代理)
         async function searchRoute() {
             const company = document.getElementById('search-company').value;
             const route = document.getElementById('search-route').value.trim().toUpperCase();
@@ -436,13 +407,13 @@
             const routeListContainer = document.getElementById('route-results-list');
             const stopListContainer = document.getElementById('stop-results-list');
             
-            routeListContainer.innerHTML = `<div style="padding:15px; color:#007aff; text-align:center;">🔍 正在直連搜尋路線中...</div>`;
+            routeListContainer.innerHTML = `<div style="padding:15px; color:#007aff; text-align:center;">🔍 正在連線開放數據庫...</div>`;
             stopListContainer.innerHTML = `<div style="padding:15px; color:#8e8e93; text-align:center;">請先完成第一步</div>`;
 
             try {
                 if (company === "KMB") {
                     if (!kmbRoutesCache) {
-                        routeListContainer.innerHTML = `<div style="padding:15px; color:#f2be38; text-align:center;">⏳ 首次同步九巴路線庫...</div>`;
+                        routeListContainer.innerHTML = `<div style="padding:15px; color:#f2be38; text-align:center;">⏳ 首次同步九巴路線庫 (約需 1-2 秒)...</div>`;
                         const res = await fetch("https://data.etabus.gov.hk/v1/transport/kmb/route");
                         const json = await res.json();
                         kmbRoutesCache = json.data || [];
@@ -488,14 +459,13 @@
                 }
             } catch (e) {
                 console.error(e);
-                routeListContainer.innerHTML = `<div style="padding:15px; color:#ff3b30; text-align:center;">⚠️ 網絡連線失敗，請重試</div>`;
+                routeListContainer.innerHTML = `<div style="padding:15px; color:#ff3b30; text-align:center;">⚠️ 連線失敗，請檢查網路</div>`;
             }
         }
 
-        // 載入車站清單 (直連官方 API)
         async function loadStops(company, route, bound, serviceType, destName) {
             const stopListContainer = document.getElementById('stop-results-list');
-            stopListContainer.innerHTML = `<div style="padding:15px; color:#007aff; text-align:center;">⏳ 正在撈取車站清單...</div>`;
+            stopListContainer.innerHTML = `<div style="padding:15px; color:#007aff; text-align:center;">⏳ 正在撈取巴士站清單...</div>`;
 
             try {
                 if (company === "KMB") {
@@ -562,10 +532,10 @@
                         `;
                     }).join('');
 
-                    // 直連異步撈取城巴個別站點繁體中文名稱
+                    // 修正城巴 API 網址，移除錯誤的 /CTB/ 段落
                     stops.forEach(s => {
                         if (ctbStopsMap[s.stop]) return;
-                        fetch(`https://rt.data.gov.hk/v1/transport/citybus-nwfb/stop/CTB/${s.stop}`)
+                        fetch(`https://rt.data.gov.hk/v1/transport/citybus-nwfb/stop/${s.stop}`)
                             .then(r => r.json())
                             .then(result => {
                                 const name = result.data?.name_tc || "未知車站";
@@ -588,7 +558,7 @@
         // 啟動監測看板
         initBoard();
         fetchAPI();
-        setInterval(fetchAPI, 10000); // 更改為每 10 秒自動連線更新一次到站時間
+        setInterval(fetchAPI, 10000); // 更改為每 10 秒向後台 API 刷新一次數據
     </script>
 </body>
 </html>
