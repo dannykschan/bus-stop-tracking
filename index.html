@@ -2,82 +2,88 @@
 <html lang="zh-HK">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>巴士監測看板</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>巴士看板 V4.0</title>
     <style>
-        body { background: #000; color: #fff; font-family: sans-serif; margin: 0; padding: 20px; }
+        body { background: #000; color: #fff; font-family: -apple-system, sans-serif; padding: 20px; }
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
-        .bus-card { background: #1c1c1e; padding: 15px; border-radius: 15px; cursor: pointer; }
-        .modal { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.85); display: none; justify-content: center; align-items: center; }
-        .modal-content { background: #2c2c2e; padding: 20px; border-radius: 20px; width: 90%; max-width: 500px; color: white; }
-        .list-item { padding: 10px; border-bottom: 1px solid #444; display: flex; justify-content: space-between; }
-        input, select { background: #3a3a3c; border: none; color: white; padding: 10px; border-radius: 8px; }
-        button { background: #007aff; border: none; color: white; padding: 10px 15px; border-radius: 8px; cursor: pointer; }
+        .card { background: #1c1c1e; padding: 15px; border-radius: 15px; }
+        .modal { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.9); display: none; justify-content: center; align-items: center; }
+        .modal-content { background: #2c2c2e; padding: 20px; border-radius: 20px; width: 90%; max-width: 500px; }
+        .btn { background: #007aff; border: none; color: white; padding: 10px; border-radius: 8px; cursor: pointer; }
+        .item { padding: 10px; border-bottom: 1px solid #444; cursor: pointer; }
     </style>
 </head>
 <body>
     <div class="grid" id="board"></div>
+    <button class="btn" onclick="openModal()">新增監測</button>
+
     <div class="modal" id="modal">
         <div class="modal-content">
-            <h3 id="modal-title">修改設定</h3>
-            <select id="sel-co"><option value="KMB">九巴</option><option value="CTB">城巴</option></select>
-            <input type="text" id="inp-route" placeholder="路線">
-            <button onclick="searchRoute()">搜尋</button>
-            <div id="results" style="margin-top: 10px; max-height: 300px; overflow-y: auto;"></div>
-            <button style="margin-top:10px; background:red;" onclick="closeModal()">關閉</button>
+            <input type="text" id="route" placeholder="路線 (如 A22)">
+            <button class="btn" onclick="fetchRoute()">搜尋</button>
+            <div id="results" style="margin-top:20px; height:300px; overflow-y:auto;"></div>
+            <button class="btn" style="background:#555;" onclick="closeModal()">關閉</button>
         </div>
     </div>
 
     <script>
-        let config = JSON.parse(localStorage.getItem('bus_config') || '[]');
-        
-        function saveToStorage() { localStorage.setItem('bus_config', JSON.stringify(config)); }
+        let busConfig = JSON.parse(localStorage.getItem('bus_config') || '[]');
 
-        async function searchRoute() {
-            const co = document.getElementById('sel-co').value;
-            const rt = document.getElementById('inp-route').value.toUpperCase();
+        function openModal() { document.getElementById('modal').style.display = 'flex'; }
+        function closeModal() { document.getElementById('modal').style.display = 'none'; }
+
+        async function fetchRoute() {
+            const rt = document.getElementById('route').value.toUpperCase();
             const resDiv = document.getElementById('results');
             resDiv.innerHTML = "搜尋中...";
             
-            if(co === 'CTB') {
-                const data = await (await fetch(`https://rt.data.gov.hk/v1/transport/citybus-nwfb/route/CTB/${rt}`)).json();
-                if(data.data) {
-                    resDiv.innerHTML = `<div class="list-item" onclick="loadStops('CTB','${rt}','outbound','${data.data.dest_tc}')">去程: ${data.data.dest_tc}</div>` +
-                                       `<div class="list-item" onclick="loadStops('CTB','${rt}','inbound','${data.data.orig_tc}')">回程: ${data.data.orig_tc}</div>`;
-                }
-            } else {
-                // KMB 邏輯...
-                resDiv.innerHTML = "九巴功能請自行補上對應路徑";
-            }
-        }
-
-        async function loadStops(co, rt, dir, dest) {
-            const resDiv = document.getElementById('results');
-            resDiv.innerHTML = "載入車站中...";
-            const stops = await (await fetch(`https://rt.data.gov.hk/v1/transport/citybus-nwfb/route-stop/CTB/${rt}/${dir}`)).json();
+            // 嘗試獲取城巴路線結構
+            const resp = await fetch(`https://rt.data.gov.hk/v1/transport/citybus-nwfb/route/CTB/${rt}`);
+            const data = await resp.json();
             
-            // 預先取得所有站名
-            resDiv.innerHTML = "";
-            for(let s of stops.data) {
-                const stopInfo = await (await fetch(`https://rt.data.gov.hk/v1/transport/citybus-nwfb/stop/CTB/${s.stop}`)).json();
-                const name = stopInfo.data ? stopInfo.data.name_tc : "未知車站";
-                const div = document.createElement('div');
-                div.className = "list-item";
-                div.innerHTML = `<span>${name}</span><span>${s.stop}</span>`;
-                div.onclick = () => {
-                    config.push({co, rt, dir, stopId: s.stop, stopName: name, dest});
-                    saveToStorage();
-                    closeModal();
-                    location.reload();
-                };
-                resDiv.appendChild(div);
-            }
+            if (!data.data) { resDiv.innerHTML = "找不到路線"; return; }
+            
+            resDiv.innerHTML = `<div class="item" onclick="loadStops('${rt}', 'outbound', '${data.data.dest_tc}')">往 ${data.data.dest_tc}</div>` +
+                               `<div class="item" onclick="loadStops('${rt}', 'inbound', '${data.data.orig_tc}')">往 ${data.data.orig_tc}</div>`;
         }
 
-        function closeModal() { document.getElementById('modal').style.display = 'none'; }
-        document.body.onclick = (e) => { if(e.target.id === 'board') document.getElementById('modal').style.display = 'flex'; };
-        
-        // 渲染已儲存項目...
+        async function loadStops(rt, dir, dest) {
+            const resDiv = document.getElementById('results');
+            resDiv.innerHTML = "正在精準撈取車站名...";
+            
+            const stopResp = await fetch(`https://rt.data.gov.hk/v1/transport/citybus-nwfb/route-stop/CTB/${rt}/${dir}`);
+            const stopData = await stopResp.json();
+            
+            // 關鍵修改：先撈齊所有站名，再一起渲染
+            const stops = stopData.data;
+            const stopList = [];
+            
+            for (let s of stops) {
+                const nameResp = await fetch(`https://rt.data.gov.hk/v1/transport/citybus-nwfb/stop/CTB/${s.stop}`);
+                const nameData = await nameResp.json();
+                const name = nameData.data ? nameData.data.name_tc : "車站名稱無法讀取";
+                stopList.push({ id: s.stop, name: name });
+            }
+
+            resDiv.innerHTML = stopList.map(s => `
+                <div class="item" onclick="saveBus('${rt}', '${dir}', '${s.id}', '${s.name}', '${dest}')">
+                    ${s.name} (${s.id})
+                </div>`).join('');
+        }
+
+        function saveBus(rt, dir, id, name, dest) {
+            busConfig.push({ rt, dir, id, name, dest });
+            localStorage.setItem('bus_config', JSON.stringify(busConfig));
+            alert("已儲存！");
+            location.reload();
+        }
+
+        // 渲染看板...
+        const board = document.getElementById('board');
+        busConfig.forEach(b => {
+            board.innerHTML += `<div class="card"><h3>${b.rt} 往 ${b.dest}</h3><p>${b.name}</p></div>`;
+        });
     </script>
 </body>
 </html>
