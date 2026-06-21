@@ -3,15 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>巴士看板 V4.0</title>
+    <title>巴士看板 - 修正版</title>
     <style>
         body { background: #000; color: #fff; font-family: -apple-system, sans-serif; padding: 20px; }
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
         .card { background: #1c1c1e; padding: 15px; border-radius: 15px; }
-        .modal { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.9); display: none; justify-content: center; align-items: center; }
+        .modal { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.9); display: none; justify-content: center; align-items: center; z-index: 100; }
         .modal-content { background: #2c2c2e; padding: 20px; border-radius: 20px; width: 90%; max-width: 500px; }
-        .btn { background: #007aff; border: none; color: white; padding: 10px; border-radius: 8px; cursor: pointer; }
-        .item { padding: 10px; border-bottom: 1px solid #444; cursor: pointer; }
+        .btn { background: #007aff; border: none; color: white; padding: 10px 15px; border-radius: 8px; cursor: pointer; margin-top: 10px; }
+        .item { padding: 12px; border-bottom: 1px solid #444; cursor: pointer; color: #fff; }
+        input, select { background: #3a3a3c; border: none; color: #fff; padding: 10px; border-radius: 8px; width: 100%; margin-bottom: 10px; }
     </style>
 </head>
 <body>
@@ -20,9 +21,13 @@
 
     <div class="modal" id="modal">
         <div class="modal-content">
-            <input type="text" id="route" placeholder="路線 (如 A22)">
-            <button class="btn" onclick="fetchRoute()">搜尋</button>
-            <div id="results" style="margin-top:20px; height:300px; overflow-y:auto;"></div>
+            <select id="co">
+                <option value="CTB">城巴</option>
+                <option value="KMB">九巴</option>
+            </select>
+            <input type="text" id="route" placeholder="請輸入路線 (如 A22 或 11X)">
+            <button class="btn" onclick="search()">搜尋</button>
+            <div id="results" style="margin-top:20px; height:300px; overflow-y:auto; border-top: 1px solid #444;"></div>
             <button class="btn" style="background:#555;" onclick="closeModal()">關閉</button>
         </div>
     </div>
@@ -33,53 +38,55 @@
         function openModal() { document.getElementById('modal').style.display = 'flex'; }
         function closeModal() { document.getElementById('modal').style.display = 'none'; }
 
-        async function fetchRoute() {
-            const rt = document.getElementById('route').value.toUpperCase();
+        async function search() {
+            const co = document.getElementById('co').value;
+            const rt = document.getElementById('route').value.trim().toUpperCase();
             const resDiv = document.getElementById('results');
             resDiv.innerHTML = "搜尋中...";
             
-            // 嘗試獲取城巴路線結構
-            const resp = await fetch(`https://rt.data.gov.hk/v1/transport/citybus-nwfb/route/CTB/${rt}`);
-            const data = await resp.json();
-            
-            if (!data.data) { resDiv.innerHTML = "找不到路線"; return; }
-            
-            resDiv.innerHTML = `<div class="item" onclick="loadStops('${rt}', 'outbound', '${data.data.dest_tc}')">往 ${data.data.dest_tc}</div>` +
-                               `<div class="item" onclick="loadStops('${rt}', 'inbound', '${data.data.orig_tc}')">往 ${data.data.orig_tc}</div>`;
+            try {
+                if (co === 'CTB') {
+                    const resp = await fetch(`https://rt.data.gov.hk/v1/transport/citybus-nwfb/route/CTB/${rt}`);
+                    const data = await resp.json();
+                    if (!data.data) throw new Error("找不到路線");
+                    resDiv.innerHTML = `<div class="item" onclick="loadStops('CTB','${rt}','outbound','${data.data.dest_tc}')">往 ${data.data.dest_tc}</div>` +
+                                       `<div class="item" onclick="loadStops('CTB','${rt}','inbound','${data.data.orig_tc}')">往 ${data.data.orig_tc}</div>`;
+                } else {
+                    resDiv.innerHTML = "九巴接口暫時關閉，請先使用城巴";
+                }
+            } catch(e) { resDiv.innerHTML = "錯誤: " + e.message; }
         }
 
-        async function loadStops(rt, dir, dest) {
+        async function loadStops(co, rt, dir, dest) {
             const resDiv = document.getElementById('results');
-            resDiv.innerHTML = "正在精準撈取車站名...";
-            
-            const stopResp = await fetch(`https://rt.data.gov.hk/v1/transport/citybus-nwfb/route-stop/CTB/${rt}/${dir}`);
-            const stopData = await stopResp.json();
-            
-            // 關鍵修改：先撈齊所有站名，再一起渲染
-            const stops = stopData.data;
-            const stopList = [];
-            
-            for (let s of stops) {
-                const nameResp = await fetch(`https://rt.data.gov.hk/v1/transport/citybus-nwfb/stop/CTB/${s.stop}`);
-                const nameData = await nameResp.json();
-                const name = nameData.data ? nameData.data.name_tc : "車站名稱無法讀取";
-                stopList.push({ id: s.stop, name: name });
-            }
-
-            resDiv.innerHTML = stopList.map(s => `
-                <div class="item" onclick="saveBus('${rt}', '${dir}', '${s.id}', '${s.name}', '${dest}')">
-                    ${s.name} (${s.id})
-                </div>`).join('');
+            resDiv.innerHTML = "讀取車站中...";
+            try {
+                const resp = await fetch(`https://rt.data.gov.hk/v1/transport/citybus-nwfb/route-stop/CTB/${rt}/${dir}`);
+                const data = await resp.json();
+                const stops = data.data;
+                
+                resDiv.innerHTML = "";
+                for (let s of stops) {
+                    const nResp = await fetch(`https://rt.data.gov.hk/v1/transport/citybus-nwfb/stop/CTB/${s.stop}`);
+                    const nData = await nResp.json();
+                    const name = nData.data ? nData.data.name_tc : "車站 " + s.stop;
+                    
+                    const div = document.createElement('div');
+                    div.className = "item";
+                    div.innerText = name;
+                    div.onclick = () => save(rt, dir, s.stop, name, dest);
+                    resDiv.appendChild(div);
+                }
+            } catch(e) { resDiv.innerHTML = "讀取失敗"; }
         }
 
-        function saveBus(rt, dir, id, name, dest) {
+        function save(rt, dir, id, name, dest) {
             busConfig.push({ rt, dir, id, name, dest });
             localStorage.setItem('bus_config', JSON.stringify(busConfig));
-            alert("已儲存！");
             location.reload();
         }
 
-        // 渲染看板...
+        // 渲染看板
         const board = document.getElementById('board');
         busConfig.forEach(b => {
             board.innerHTML += `<div class="card"><h3>${b.rt} 往 ${b.dest}</h3><p>${b.name}</p></div>`;
