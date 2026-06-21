@@ -16,7 +16,7 @@
             display: flex;
             flex-direction: column;
             padding: 24px;
-            overflow: hidden;
+            overflow-y: auto; /* 確保字體放大後喺唔同螢幕都能正常看清 */
         }
         /* 頂部時間列 */
         .header-bar {
@@ -74,18 +74,28 @@
         .bus-card.kmb { background-color: #922324; color: #ffffff; }
         .bus-card.ctb { background-color: #f2be38; color: #1c1c1e; }
         
-        .card-top { display: flex; align-items: center; gap: 18px; }
+        /* 1. 頂部佈局調整為垂直堆疊 */
+        .card-top { display: flex; flex-direction: column; gap: 8px; min-width: 0; width: 100%; }
+        
+        /* 1. 路線號碼與往邊度放同一行 */
+        .route-row { display: flex; align-items: center; gap: 12px; min-width: 0; width: 100%; }
+        
+        /* 1. 統一設定 2.4rem 確保路線、往邊度、站名完全一樣咁高咁大 */
         .route-badge {
             background: #ffffff; color: #000000; border-radius: 16px;
-            font-size: 2.4rem; font-weight: 900; padding: 10px 0;
-            width: 100px; text-align: center; flex-shrink: 0;
+            font-size: 2.4rem; font-weight: 900; padding: 4px 16px;
+            text-align: center; flex-shrink: 0;
         }
-        .info-block { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-        .stop-name { font-size: 1.4rem; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .dest-name { font-size: 1.2rem; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .dest-name { font-size: 2.4rem; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-grow: 1; }
+        
+        /* 1. 站名放喺下一行，字體與路線一樣大 */
+        .stop-name { font-size: 2.4rem; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }
         
         /* 雙層時間佈局 */
         .card-bottom { display: flex; flex-direction: column; margin-top: 15px; }
+        
+        /* 2. 到站時間與倒數時間嘅 Label 樣式 */
+        .time-section-label { font-size: 0.95rem; font-weight: bold; opacity: 0.75; margin-bottom: 4px; }
         
         .arrival-row, .countdown-row {
             display: flex;
@@ -102,7 +112,7 @@
         .arrival-row { opacity: 0.9; margin-bottom: 8px; }
         
         /* 進度條 */
-        .progress-bar { width: 100%; height: 4px; border-radius: 2px; position: relative; display: flex; align-items: center; }
+        .progress-bar { width: 100%; height: 4px; border-radius: 2px; position: relative; display: flex; align-items: center; margin-top: 4px; }
         .kmb .progress-bar { background: rgba(255,255,255,0.3); }
         .ctb .progress-bar { background: rgba(0,0,0,0.15); }
         .dot { width: 8px; height: 8px; border-radius: 50%; position: absolute; }
@@ -110,7 +120,7 @@
         .ctb .dot { background: #1c1c1e; }
         .dot.start { left: 0; } .dot.end { right: 0; }
 
-        .countdown-row { margin-top: 8px; }
+        .countdown-row { margin-top: 8px; margin-bottom: 4px; }
 
         /* 智能搵站彈出視窗 */
         .modal-overlay {
@@ -216,7 +226,7 @@
         let kmbStopsMap = {};
         let ctbStopsMap = {}; 
 
-        // 建立並渲染主畫面
+        // 建立並渲染主畫面 (1 & 2. 已根據新佈局與 Label 要求更新)
         function initBoard() {
             const container = document.getElementById('board-container');
             container.innerHTML = "";
@@ -235,13 +245,14 @@
                 card.onclick = () => openModal(index);
                 card.innerHTML = `
                     <div class="card-top">
-                        <div class="route-badge">${bus.route}</div>
-                        <div class="info-block">
-                            <div class="stop-name">${bus.stopName}</div>
+                        <div class="route-row">
+                            <div class="route-badge">${bus.route}</div>
                             <div class="dest-name">往 ${bus.dest || '未設定'}</div>
                         </div>
+                        <div class="stop-name">${bus.stopName}</div>
                     </div>
                     <div class="card-bottom">
+                        <div class="time-section-label">預估到站時間</div>
                         <div class="arrival-row">
                             <span id="arrival-${index}-0">--:--</span>
                             <span id="arrival-${index}-1">--:--</span>
@@ -251,6 +262,7 @@
                             <span id="countdown-${index}-0">--:--</span>
                             <span id="countdown-${index}-1">--:--</span>
                         </div>
+                        <div class="time-section-label">倒數仲有幾耐到站</div>
                     </div>
                 `;
                 container.appendChild(card);
@@ -302,7 +314,7 @@
             });
         }, 1000);
 
-        // 核心同步網路數據 (調整為外層驅動，內建連線鎖)
+        // 核心同步網路數據
         async function fetchAPI() {
             if (busConfig.length === 0) return;
             
@@ -329,9 +341,9 @@
                     ];
                 } catch (e) {
                     console.error("Fetch ETA Error: ", e);
-                } {{
+                } finally {
                     isFetchingFlags[index] = false; 
-                }}
+                }
             });
         }
 
@@ -398,7 +410,7 @@
             fetchAPI(); 
         }
 
-        // 智能搵站核心 (直連政府免代理)
+        // 智能搵站核心
         async function searchRoute() {
             const company = document.getElementById('search-company').value;
             const route = document.getElementById('search-route').value.trim().toUpperCase();
@@ -532,7 +544,6 @@
                         `;
                     }).join('');
 
-                    // 修正城巴 API 網址，移除錯誤的 /CTB/ 段落
                     stops.forEach(s => {
                         if (ctbStopsMap[s.stop]) return;
                         fetch(`https://rt.data.gov.hk/v1/transport/citybus-nwfb/stop/${s.stop}`)
@@ -558,7 +569,12 @@
         // 啟動監測看板
         initBoard();
         fetchAPI();
-        setInterval(fetchAPI, 10000); // 更改為每 10 秒向後台 API 刷新一次數據
+        setInterval(fetchAPI, 10000); // 後台數據每 10 秒刷新一次
+
+        // 3. 每 30 秒全頁資料自動重新整理 (30000 毫秒)，徹底根治過站不更新嘅問題
+        setInterval(function() {
+            window.location.reload();
+        }, 30000);
     </script>
 </body>
 </html>
